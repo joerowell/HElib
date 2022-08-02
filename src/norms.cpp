@@ -22,6 +22,9 @@
 #include <helib/PAlgebra.h>
 #include <helib/fhe_stats.h>
 #include <helib/range.h>
+#include <cfenv>
+
+#pragma STDC FENV_ACCESS ON
 
 namespace helib {
 
@@ -604,10 +607,38 @@ void CKKS_embedInSlots(zzX& f,
   hfft.fft.apply(&buf[0]);
   f.SetLength(m / 2);
   for (long i : range(m / 2)) {
-    double f_i = std::round(MUL(buf[i], pow[i]).real() * scaling);
-    f[i] = f_i;
-    if (f[i] != f_i) {
-      throw LogicError("overflow in encoding");
+    // Replace the multiplication explicitly with long doubles.
+    long double x = buf[i].real();
+    long double y = buf[i].imag();
+    long double u = pow[i].real();
+    long double v = pow[i].imag();
+
+    // We only need the real portion.
+    const long double real = x * u - y * v;
+
+    // It's possible that this didn't fit into a long double.
+    // We can test that by making sure that we didn't throw anything
+    if (std::fetestexcept(FE_ALL_EXCEPT)) {
+      throw LogicError("Exception when computing MUL(buf[i], pow[i])");
+    }
+
+    // Now we'll check that the multiplication by scaling works.
+    const long double scaled = static_cast<long double>(scaling) * real;
+    if (std::fetestexcept(FE_ALL_EXCEPT)) {
+      throw LogicError("Exception when computing scaled");
+    }
+
+    // And finally we'll narrow it down into a long. It's possible that
+    // this is too big for a long, so we'll check that.
+    if (std::numeric_limits<long>::max() < scaled) {
+      throw LogicError("Scaled value is too large for a long");
+    }
+
+    // Finally, we'll do the conversion.
+    f[i] = std::lroundl(scaled);
+    // And now we'll check again if the conversion failed.
+    if (std::fetestexcept(FE_INVALID)) {
+      throw LogicError("Conversion from scaled to long failed");
     }
   }
 
