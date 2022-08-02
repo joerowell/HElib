@@ -23,6 +23,7 @@
 #include <helib/fhe_stats.h>
 #include <helib/range.h>
 #include <cfenv>
+#include <limits>
 
 #pragma STDC FENV_ACCESS ON
 
