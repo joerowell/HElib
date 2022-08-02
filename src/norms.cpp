@@ -608,14 +608,21 @@ void CKKS_embedInSlots(zzX& f,
   hfft.fft.apply(&buf[0]);
   f.SetLength(m / 2);
   for (long i : range(m / 2)) {
-    // Replace the multiplication explicitly with long doubles.
-    long double x = buf[i].real();
-    long double y = buf[i].imag();
-    long double u = pow[i].real();
-    long double v = pow[i].imag();
+    // It's possible that this was set already, make sure it isn't.
+    if (std::feclearexcept(FE_ALL_EXCEPT)) {
+      throw LogicError("Could not clear floating point exceptions");
+    }
+
+    // Replace the multiplication explicitly with a larger type.
+    // Here we'll use a long double, which has ~80 bits of precision.
+    using T == long double;
+    const T x = static_cast<T>(buf[i].real());
+    const T y = static_cast<T>(buf[i].imag());
+    const T u = static_cast<T>(pow[i].real());
+    const T v = static_cast<T>(pow[i].imag());
 
     // We only need the real portion.
-    const long double real = x * u - y * v;
+    const T real = x * u - y * v;
 
     // It's possible that this didn't fit into a long double.
     // We can test that by making sure that we didn't throw anything
@@ -624,7 +631,7 @@ void CKKS_embedInSlots(zzX& f,
     }
 
     // Now we'll check that the multiplication by scaling works.
-    const long double scaled = static_cast<long double>(scaling) * real;
+    const T scaled = static_cast<T>(scaling) * real;
     if (std::fetestexcept(FE_ALL_EXCEPT)) {
       throw LogicError("Exception when computing scaled");
     }
